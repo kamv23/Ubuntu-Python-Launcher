@@ -3,6 +3,11 @@ out/
 !**/src/main/**/out/
 !**/src/test/**/out/
 .kotlin
+/MANIFEST.MF
+/sources.txt
+/Ubuntu-Python-Launcher.iml
+/.out
+/.idea
 
 ### Eclipse ###
 .apt_generated
