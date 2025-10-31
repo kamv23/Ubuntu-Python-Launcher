@@ -21,19 +21,19 @@ import java.util.function.Consumer;
  * -------------
  * Cross‑platform (Ubuntu 24+, macOS, Windows) helper to launch and stop Python scripts.
  *
- * Improvements for Ubuntu:
- *  • Launches Python in its own process group (Unix) via `setsid` if available.
- *    This allows clean group termination without leaving child processes (webservers, etc.).
- *  • Stop sequence is now: SIGINT → wait → TERM (+pkill -P) → wait → KILL (+pkill -KILL -P).
- *  • Keeps unbuffered output (-u) and streams to a log sink.
- *  • PYTHONPATH is prepended with {baseDir}/python/imports.
+ * Mac‑parity & Ubuntu niceties:
+ *  • Unbuffered output (-u) with live log streaming
+ *  • Interactive REPL launcher (ties into LauncherUI input bar)
+ *  • New process group on Unix via `setsid` when available (clean teardown)
+ *  • Graceful stop: SIGINT → TERM (+pkill children) → KILL (+pkill -KILL children)
+ *  • PYTHONPATH prepends {root}/imports so local packages are resolved first
  */
 public class ProcessRunner {
 
-    private final Path scriptPath;
-    private final Path baseDir;
-    private final Path importsDir;
-    private final String pythonExe;
+    private final Path scriptPath;      // absolute path to the script (synthetic for REPL)
+    private final Path baseDir;         // base project folder
+    private final Path importsDir;      // <root>/imports
+    private final String pythonExe;     // resolved python executable
 
     private volatile Process process;
     private OutputStream stdin;
@@ -48,7 +48,7 @@ public class ProcessRunner {
         this.scriptPath = Objects.requireNonNull(scriptPath).toAbsolutePath();
         this.pythonExe = Objects.requireNonNull(pythonExe);
         this.baseDir = Objects.requireNonNull(baseDir).toAbsolutePath();
-        this.importsDir = this.baseDir.resolve("python").resolve("imports");
+        this.importsDir = PackageManager.getImportsDir();
     }
 
     /**
@@ -62,7 +62,7 @@ public class ProcessRunner {
 
         ArrayList<String> cmd = new ArrayList<>();
         if (isUnix() && hasCmd("setsid")) {
-            // Create a new process group/session for clean teardown later.
+            // New session for the python process so children can be signalled/cleaned reliably.
             cmd.add("setsid");
         }
         cmd.add(pythonExe);
@@ -72,9 +72,10 @@ public class ProcessRunner {
         ProcessBuilder pb = new ProcessBuilder(cmd);
         pb.directory(scriptPath.getParent().toFile());
 
-        // Environment
+        // --- Environment ---
         Map<String, String> env = pb.environment();
         env.putIfAbsent("PYTHONUNBUFFERED", "1");
+        // prepend local imports dir to PYTHONPATH so our packages win
         String existing = env.getOrDefault("PYTHONPATH", "");
         String imports = importsDir.toString();
         if (existing.isBlank()) {
@@ -83,7 +84,7 @@ public class ProcessRunner {
             env.put("PYTHONPATH", imports + pathSep() + existing);
         }
 
-        // Start
+        // --- Start ---
         process = pb.start();
         stdin = process.getOutputStream();
         running = true;
@@ -92,7 +93,7 @@ public class ProcessRunner {
         long pid = safePid(process);
         log("[run] " + scriptPath.getFileName() + " started (PID=" + pid + ")");
 
-        // Pump stdout/stderr
+        // Stream pumps
         outThread = pumpStream(process.getInputStream(), "[out] ");
         errThread = pumpStream(process.getErrorStream(), "[err] ");
 
@@ -129,16 +130,12 @@ public class ProcessRunner {
         Path scriptsDir = baseDir.resolve("scripts");
         pb.directory(scriptsDir.toFile());
 
-        // Environment (same as start())
         Map<String, String> env = pb.environment();
         env.putIfAbsent("PYTHONUNBUFFERED", "1");
         String existing = env.getOrDefault("PYTHONPATH", "");
         String imports = importsDir.toString();
-        if (existing.isBlank()) {
-            env.put("PYTHONPATH", imports);
-        } else if (!existing.contains(imports)) {
-            env.put("PYTHONPATH", imports + pathSep() + existing);
-        }
+        if (existing.isBlank()) env.put("PYTHONPATH", imports);
+        else if (!existing.contains(imports)) env.put("PYTHONPATH", imports + pathSep() + existing);
 
         process = pb.start();
         stdin = process.getOutputStream();
@@ -181,13 +178,13 @@ public class ProcessRunner {
                 log("[stop] Sent SIGINT to PID " + pid);
             } catch (Exception ignored) {}
         } else {
-            // On Windows, many Python apps respond to ^C via console attach; best-effort via stdin.
-            sendLine("\u0003"); // ETX
+            // On Windows, best‑effort via stdin (ETX)
+            sendLine("\u0003");
         }
     }
 
     /**
-     * Gracefully stop the process: SIGINT → TERM(+pkill children) → KILL.
+     * Gracefully stop the process: SIGINT → TERM (+pkill children) → KILL.
      * @param graceMillis total time to allow for a polite shutdown before escalation.
      */
     public synchronized void stopGracefully(long graceMillis) {
@@ -204,30 +201,20 @@ public class ProcessRunner {
                 log("[stop] Sent SIGINT to PID " + pid);
             } catch (Exception ignored) {}
         } else {
-            sendLine("\u0003"); // Ctrl-C for Windows consoles (best-effort)
+            sendLine("\u0003"); // Ctrl‑C for Windows consoles
         }
-        if (waitFor(process, Math.max(300, graceMillis / 3))) {
-            closeStdinQuietly();
-            return;
-        }
+        if (waitFor(process, Math.max(300, graceMillis / 3))) { closeStdinQuietly(); return; }
 
         // Phase 2: TERM parent and children
         log("[stop] Sending TERM to PID " + pid + " …");
         try { process.destroy(); } catch (Exception ignored) {}
-        if (isUnix()) {
-            bestEffortKillChildren(pid, "-TERM");
-        }
-        if (waitFor(process, Math.max(500, graceMillis / 3))) {
-            closeStdinQuietly();
-            return;
-        }
+        if (isUnix()) bestEffortKillChildren(pid, "-TERM");
+        if (waitFor(process, Math.max(500, graceMillis / 3))) { closeStdinQuietly(); return; }
 
-        // Phase 3: KILL parent and any remaining children
+        // Phase 3: KILL parent and remaining children
         log("[stop] Forcing kill of PID " + pid + " …");
         try { process.destroyForcibly(); } catch (Exception ignored) {}
-        if (isUnix()) {
-            bestEffortKillChildren(pid, "-KILL");
-        }
+        if (isUnix()) bestEffortKillChildren(pid, "-KILL");
         waitFor(process, 2_000);
         closeStdinQuietly();
     }
@@ -247,9 +234,7 @@ public class ProcessRunner {
         } catch (IOException ignored) {}
     }
 
-    public long getPid() {
-        return safePid(process);
-    }
+    public long getPid() { return safePid(process); }
 
     // ---------- Internals ----------
 
@@ -279,22 +264,16 @@ public class ProcessRunner {
         catch (InterruptedException e) { Thread.currentThread().interrupt(); return false; }
     }
 
-    private void log(String s) {
-        try { logSink.accept(s); } catch (Throwable ignored) {}
-    }
+    private void log(String s) { try { logSink.accept(s); } catch (Throwable ignored) {} }
 
     private static boolean isUnix() {
         String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
         return os.contains("nix") || os.contains("nux") || os.contains("mac") || os.contains("darwin");
     }
 
-    private static String pathSep() {
-        return System.getProperty("path.separator");
-    }
+    private static String pathSep() { return System.getProperty("path.separator"); }
 
-    private static long safePid(Process p) {
-        try { return (p == null) ? -1L : p.pid(); } catch (Throwable t) { return -1L; }
-    }
+    private static long safePid(Process p) { try { return (p == null) ? -1L : p.pid(); } catch (Throwable t) { return -1L; } }
 
     private static boolean hasCmd(String name) {
         try {
