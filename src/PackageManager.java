@@ -7,6 +7,12 @@ import java.nio.file.*;
 import java.util.*;
 import java.util.function.Consumer;
 import java.util.prefs.Preferences;
+import java.net.URL;
+import java.io.InputStream;
+import java.io.BufferedInputStream;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
 
 /**
  * PackageManager
@@ -314,5 +320,139 @@ public final class PackageManager {
         log.accept("[env] Imports: " + getImportsDir());
         String py = getPythonExec();
         log.accept("[env] Python: " + (py.isEmpty() ? "(not found)" : py));
+    }
+
+    /**
+     * Download and build the latest CPython 3.x from python.org into the portable-python folder.
+     *
+     * Layout on success:
+     *   <root>/portable-python/<triplet>/bin/python3
+     *
+     * @return absolute path to the installed python executable, or empty string on failure.
+     */
+    public static String downloadAndInstallLatestPython(Consumer<String> log) throws IOException, InterruptedException {
+        Objects.requireNonNull(log, "log");
+
+        if (!isMac() && !isLinux()) {
+            log.accept("[python] Portable download is only supported on macOS and Linux.");
+            return "";
+        }
+
+        ensureScaffold(log);
+        Path root = getRootDir();
+        Path portableRoot = root.resolve(PORTABLE_DIR_NAME);
+        Files.createDirectories(portableRoot);
+
+        String latest = fetchLatestPython3Version(log);
+        if (latest == null || latest.isEmpty()) {
+            log.accept("[python] Could not determine latest Python 3 version.");
+            return "";
+        }
+
+        log.accept("[python] Latest Python 3 detected: " + latest);
+
+        String tarName = "Python-" + latest + ".tgz";
+        String tarUrl = "https://www.python.org/ftp/python/" + latest + "/" + tarName;
+
+        Path workDir = portableRoot.resolve("build-" + latest);
+        Files.createDirectories(workDir);
+        Path tarPath = workDir.resolve(tarName);
+
+        log.accept("[python] Downloading tarball from: " + tarUrl);
+        try (InputStream in = new BufferedInputStream(new URL(tarUrl).openStream())) {
+            Files.copy(in, tarPath, StandardCopyOption.REPLACE_EXISTING);
+        }
+        log.accept("[python] Download complete: " + tarPath);
+
+        // Extract
+        int rc = runLogged(log, workDir, "tar", "-xf", tarName);
+        if (rc != 0) {
+            log.accept("[python] tar extraction failed with code " + rc);
+            return "";
+        }
+
+        Path srcDir = workDir.resolve("Python-" + latest);
+        if (!Files.isDirectory(srcDir)) {
+            log.accept("[python] Source directory not found after extract: " + srcDir);
+            return "";
+        }
+
+        Path prefix = portableRoot.resolve(platformTriplet());
+        Files.createDirectories(prefix);
+        log.accept("[python] Configuring build with prefix: " + prefix);
+
+        rc = runLogged(log, srcDir, "./configure", "--prefix", prefix.toString(), "--enable-optimizations");
+        if (rc != 0) {
+            log.accept("[python] ./configure failed with code " + rc + ". Ensure build-essential and dev libraries are installed.");
+            return "";
+        }
+
+        int jobs = Math.max(1, Runtime.getRuntime().availableProcessors());
+        log.accept("[python] Building (make -j" + jobs + ") … this can take several minutes.");
+        rc = runLogged(log, srcDir, "make", "-j" + jobs);
+        if (rc != 0) {
+            log.accept("[python] make failed with code " + rc);
+            return "";
+        }
+
+        log.accept("[python] Running make install …");
+        rc = runLogged(log, srcDir, "make", "install");
+        if (rc != 0) {
+            log.accept("[python] make install failed with code " + rc);
+            return "";
+        }
+
+        Path bin = prefix.resolve("bin");
+        Path py3 = bin.resolve("python3");
+        Path py  = bin.resolve("python");
+        Path chosen = Files.isExecutable(py3) ? py3 : (Files.isExecutable(py) ? py : null);
+        if (chosen == null) {
+            log.accept("[python] Build completed but no python executable found in " + bin);
+            return "";
+        }
+
+        String exe = chosen.toString();
+        setPythonExec(exe);
+        log.accept("[python] Portable Python installed at: " + exe);
+        return exe;
+    }
+
+    /** Fetch the latest Python 3.x.y version string from python.org directory listing. */
+    private static String fetchLatestPython3Version(Consumer<String> log) {
+        String url = "https://www.python.org/ftp/python/";
+        try (BufferedReader br = new BufferedReader(new InputStreamReader(new URL(url).openStream(), StandardCharsets.UTF_8))) {
+            Pattern pat = Pattern.compile("href=\\\"(3\\.[0-9]+\\.[0-9]+)/\\\"");
+            java.util.List<String> versions = new ArrayList<>();
+            String line;
+            while ((line = br.readLine()) != null) {
+                Matcher m = pat.matcher(line);
+                while (m.find()) {
+                    versions.add(m.group(1));
+                }
+            }
+            if (versions.isEmpty()) return null;
+            versions.sort(PackageManager::compareVersions);
+            return versions.get(versions.size() - 1);
+        } catch (Exception e) {
+            if (log != null) log.accept("[python] Failed to query python.org: " + e.getMessage());
+            return null;
+        }
+    }
+
+    private static int compareVersions(String a, String b) {
+        String[] pa = a.split("\\.");
+        String[] pb = b.split("\\.");
+        int n = Math.max(pa.length, pb.length);
+        for (int i = 0; i < n; i++) {
+            int va = (i < pa.length) ? parseIntSafe(pa[i]) : 0;
+            int vb = (i < pb.length) ? parseIntSafe(pb[i]) : 0;
+            int cmp = Integer.compare(va, vb);
+            if (cmp != 0) return cmp;
+        }
+        return 0;
+    }
+
+    private static int parseIntSafe(String s) {
+        try { return Integer.parseInt(s); } catch (NumberFormatException e) { return 0; }
     }
 }

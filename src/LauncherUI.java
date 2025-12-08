@@ -478,6 +478,34 @@ public class LauncherUI {
         });
         panel.add(browseBtn, gc);
 
+        // Add Download Latest Python (Portable)… button
+        gc.gridy++;
+        JButton downloadBtn = new JButton("Download Latest Python (Portable)…");
+        downloadBtn.addActionListener(e -> {
+            downloadBtn.setEnabled(false);
+            new Thread(() -> {
+                try {
+                    log("[python] Downloading and building latest CPython…");
+                    String exe = PackageManager.downloadAndInstallLatestPython(this::log);
+                    if (exe != null && !exe.isEmpty()) {
+                        SwingUtilities.invokeLater(() -> {
+                            pythonField.setText(exe);
+                            versionLabel.setText(getPythonVersionSafe());
+                            pythonExe = exe;
+                            log("[python] Using portable Python at: " + exe);
+                        });
+                    } else {
+                        log("[python] Portable Python installation did not complete.");
+                    }
+                } catch (Exception ex) {
+                    log("[python] Error installing Python: " + ex.getMessage());
+                } finally {
+                    SwingUtilities.invokeLater(() -> downloadBtn.setEnabled(true));
+                }
+            }, "python-download").start();
+        });
+        panel.add(downloadBtn, gc);
+
         int result = JOptionPane.showConfirmDialog(frame, panel, "Settings",
                 JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
         if (result == JOptionPane.OK_OPTION) {
