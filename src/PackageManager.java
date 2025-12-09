@@ -145,6 +145,10 @@ public final class PackageManager {
      *   <root>/portable-python/<triplet>/bin/python3 (Linux/macOS layouts)
      */
     private static String findPortablePython() {
+        // Only supported on macOS / Linux; on Windows just skip.
+        if (!isMac() && !isLinux()) {
+            return null;
+        }
         Path base = getRootDir().resolve(PORTABLE_DIR_NAME).resolve(platformTriplet());
         Path bin1 = base.resolve("bin").resolve("python3");
         Path bin2 = base.resolve("bin").resolve("python");
@@ -417,12 +421,21 @@ public final class PackageManager {
         return exe;
     }
 
-    /** Fetch the latest Python 3.x.y version string from python.org directory listing. */
+    /**
+     * Fetch the latest stable Python 3.x.y version string from python.org.
+     *
+     * We intentionally scrape the "Python Source Releases" page instead of the bare FTP
+     * directory listing so we avoid pre-release directories like 3.15.0/ that don't
+     * actually contain a matching "Python-3.15.0.tgz" tarball yet.
+     */
     private static String fetchLatestPython3Version(Consumer<String> log) {
-        String url = "https://www.python.org/ftp/python/";
-        try (BufferedReader br = new BufferedReader(new InputStreamReader(new URL(url).openStream(), StandardCharsets.UTF_8))) {
-            Pattern pat = Pattern.compile("href=\\\"(3\\.[0-9]+\\.[0-9]+)/\\\"");
-            java.util.List<String> versions = new ArrayList<>();
+        String url = "https://www.python.org/downloads/source/";
+        try (BufferedReader br = new BufferedReader(
+                new InputStreamReader(new URL(url).openStream(), StandardCharsets.UTF_8))) {
+
+            // Look for patterns like "Python 3.14.2" or "Python 3.13.11".
+            Pattern pat = Pattern.compile("Python (3\\.[0-9]+\\.[0-9]+)");
+            java.util.Set<String> versions = new java.util.HashSet<>();
             String line;
             while ((line = br.readLine()) != null) {
                 Matcher m = pat.matcher(line);
@@ -431,10 +444,14 @@ public final class PackageManager {
                 }
             }
             if (versions.isEmpty()) return null;
-            versions.sort(PackageManager::compareVersions);
-            return versions.get(versions.size() - 1);
+
+            java.util.List<String> sorted = new java.util.ArrayList<>(versions);
+            sorted.sort(PackageManager::compareVersions);
+            return sorted.get(sorted.size() - 1);
         } catch (Exception e) {
-            if (log != null) log.accept("[python] Failed to query python.org: " + e.getMessage());
+            if (log != null) {
+                log.accept("[python] Failed to query python.org: " + e.getMessage());
+            }
             return null;
         }
     }
