@@ -54,10 +54,7 @@ public class LauncherUI {
     private volatile boolean suppressToggle = false;
 
     public static void main(String[] args) {
-        try {
-            UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
-        } catch (Exception ignore) {
-        }
+        try { UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName()); } catch (Exception ignore) {}
         SwingUtilities.invokeLater(() -> new LauncherUI().start());
     }
 
@@ -75,11 +72,7 @@ public class LauncherUI {
         // Bootstrap project state from PackageManager prefs
         baseDir = PackageManager.getRootDir();
         pythonExe = PackageManager.getPythonExec();
-        try {
-            PackageManager.ensureScaffold(this::log);
-        } catch (Exception e) {
-            log("[setup] " + e.getMessage());
-        }
+        try { PackageManager.ensureScaffold(this::log); } catch (Exception e) { log("[setup] " + e.getMessage()); }
         scriptsDir = PackageManager.getScriptsDir();
         updateBaseDirLabel();
 
@@ -91,8 +84,7 @@ public class LauncherUI {
         startScanner();
 
         frame.addWindowListener(new WindowAdapter() {
-            @Override
-            public void windowClosing(WindowEvent e) {
+            @Override public void windowClosing(WindowEvent e) {
                 if (scanner != null) scanner.stop();
                 ProcessRunner.Registry.stopAll(3_000);
             }
@@ -283,8 +275,7 @@ public class LauncherUI {
         toggle.addActionListener(e -> {
             if (suppressToggle) return;
             boolean on = toggle.isSelected();
-            if (on) startScript(script);
-            else stopScript(script);
+            if (on) startScript(script); else stopScript(script);
         });
         toggleByScript.put(script, toggle);
 
@@ -321,10 +312,7 @@ public class LauncherUI {
             ProcessRunner pr = ProcessRunner.Registry.get(script);
             if (pr != null) pr.stopGracefully(3_000);
             setToggleState(script, false);
-            if (inputTarget == pr) {
-                inputTarget = null;
-                updateInputTargetLabel();
-            }
+            if (inputTarget == pr) { inputTarget = null; updateInputTargetLabel(); }
             log("[stop] " + script.getFileName() + " stopped.");
         } catch (Exception ex) {
             JOptionPane.showMessageDialog(frame,
@@ -338,11 +326,7 @@ public class LauncherUI {
         ToggleSwitch t = toggleByScript.get(script);
         if (t != null) {
             suppressToggle = true;
-            try {
-                t.setSelected(on);
-            } finally {
-                suppressToggle = false;
-            }
+            try { t.setSelected(on); } finally { suppressToggle = false; }
         }
     }
 
@@ -366,8 +350,7 @@ public class LauncherUI {
         shellToggle = new JToggleButton("Python Shell");
         shellToggle.setToolTipText("Start/Stop an interactive Python REPL in the scripts folder");
         shellToggle.addActionListener(e -> {
-            if (shellToggle.isSelected()) startShell();
-            else stopShell();
+            if (shellToggle.isSelected()) startShell(); else stopShell();
         });
 
         inputTargetLabel = new JLabel("Input target: — none —");
@@ -476,15 +459,8 @@ public class LauncherUI {
         JFileChooser chooser = new JFileChooser(scriptsDir != null ? scriptsDir.toFile() : baseDir.toFile());
         chooser.setDialogTitle("Select requirements.txt");
         chooser.setFileFilter(new javax.swing.filechooser.FileFilter() {
-            @Override
-            public boolean accept(File f) {
-                return f.isDirectory() || f.getName().toLowerCase().endsWith(".txt");
-            }
-
-            @Override
-            public String getDescription() {
-                return "Text files (*.txt)";
-            }
+            @Override public boolean accept(File f) { return f.isDirectory() || f.getName().toLowerCase().endsWith(".txt"); }
+            @Override public String getDescription() { return "Text files (*.txt)"; }
         });
         int result = chooser.showOpenDialog(frame);
         if (result == JFileChooser.APPROVE_OPTION) {
@@ -525,48 +501,29 @@ public class LauncherUI {
         JPanel panel = new JPanel(new GridBagLayout());
         panel.setBorder(new EmptyBorder(10, 10, 10, 10));
         GridBagConstraints gc = new GridBagConstraints();
-        gc.gridx = 0;
-        gc.gridy = 0;
-        gc.anchor = GridBagConstraints.WEST;
-        gc.insets = new Insets(5, 5, 5, 5);
+        gc.gridx = 0; gc.gridy = 0; gc.anchor = GridBagConstraints.WEST; gc.insets = new Insets(5,5,5,5);
 
         panel.add(new JLabel("Base Folder:"), gc);
-        gc.gridx = 1;
-        gc.fill = GridBagConstraints.HORIZONTAL;
-        gc.weightx = 1.0;
+        gc.gridx = 1; gc.fill = GridBagConstraints.HORIZONTAL; gc.weightx = 1.0;
         JLabel baseLabel = new JLabel(baseDir == null ? "—" : baseDir.toAbsolutePath().toString());
         panel.add(baseLabel, gc);
 
-        gc.gridx = 0;
-        gc.gridy++;
-        gc.fill = GridBagConstraints.NONE;
-        gc.weightx = 0;
+        gc.gridx = 0; gc.gridy++; gc.fill = GridBagConstraints.NONE; gc.weightx = 0;
         panel.add(new JLabel("Scripts Folder:"), gc);
-        gc.gridx = 1;
-        gc.fill = GridBagConstraints.HORIZONTAL;
-        gc.weightx = 1.0;
+        gc.gridx = 1; gc.fill = GridBagConstraints.HORIZONTAL; gc.weightx = 1.0;
         JLabel scriptsLabel = new JLabel(scriptsDir == null ? "—" : scriptsDir.toAbsolutePath().toString());
         panel.add(scriptsLabel, gc);
 
-        gc.gridx = 0;
-        gc.gridy++;
-        panel.add(new JLabel("Python:"), gc);
-        gc.gridx = 1;
-        gc.fill = GridBagConstraints.HORIZONTAL;
-        gc.weightx = 1.0;
+        gc.gridx = 0; gc.gridy++; panel.add(new JLabel("Python:"), gc);
+        gc.gridx = 1; gc.fill = GridBagConstraints.HORIZONTAL; gc.weightx = 1.0;
         JTextField pythonField = new JTextField(getActivePythonExe());
         panel.add(pythonField, gc);
 
-        gc.gridx = 0;
-        gc.gridy++;
-        panel.add(new JLabel("Version:"), gc);
-        gc.gridx = 1;
-        JLabel versionLabel = new JLabel(getPythonVersionSafe());
+        gc.gridx = 0; gc.gridy++; panel.add(new JLabel("Version:"), gc);
+        gc.gridx = 1; JLabel versionLabel = new JLabel(getPythonVersionSafe());
         panel.add(versionLabel, gc);
 
-        gc.gridx = 0;
-        gc.gridy++;
-        gc.gridwidth = 2;
+        gc.gridx = 0; gc.gridy++; gc.gridwidth = 2;
         JButton browseBtn = new JButton("Choose Python Executable…");
         browseBtn.addActionListener(e -> {
             JFileChooser ch = new JFileChooser();
@@ -651,7 +608,7 @@ public class LauncherUI {
             String s = new String(out, StandardCharsets.UTF_8).trim();
             return s.isEmpty() ? "unknown" : s;
         } catch (Exception e) {
-            return "unknown (" + e.getMessage() + ")";
+            return "unknown";
         }
     }
 
@@ -686,37 +643,25 @@ public class LauncherUI {
 
     // ================= Scanner Integration =================
 
-    private void startScanner() {
-        restartScanner();
-    }
+    private void startScanner() { restartScanner(); }
 
     private void restartScanner() {
-        try {
-            if (scanner != null) scanner.stop();
-        } catch (Exception ignore) {
-        }
+        try { if (scanner != null) scanner.stop(); } catch (Exception ignore) {}
         if (scriptsDir == null) return;
         scanner = new ScriptScanner(
                 scriptsDir,
                 Arrays.asList(PYTHON_CANDIDATES),
                 new ScriptScanner.Listener() {
-                    @Override
-                    public void onScriptsListChanged(List<Path> scripts) {
+                    @Override public void onScriptsListChanged(List<Path> scripts) {
                         SwingUtilities.invokeLater(LauncherUI.this::refreshScriptsList);
                     }
-
-                    @Override
-                    public void onScriptRunningState(Path script, boolean running, long pid) {
+                    @Override public void onScriptRunningState(Path script, boolean running, long pid) {
                         SwingUtilities.invokeLater(() -> setToggleState(script, running));
                     }
                 },
                 this::log
         );
-        try {
-            scanner.start();
-        } catch (Exception ex) {
-            log("[warn] Script scanner failed to start: " + ex.getMessage());
-        }
+        try { scanner.start(); } catch (Exception ex) { log("[warn] Script scanner failed to start: " + ex.getMessage()); }
     }
 
     // ================= iOS-style Toggle =================
@@ -738,10 +683,8 @@ public class LauncherUI {
             addItemListener(e -> timer.start());
             addChangeListener(e -> repaint());
             addKeyListener(new KeyAdapter() {
-                @Override
-                public void keyPressed(KeyEvent e) {
-                    if (e.getKeyCode() == KeyEvent.VK_SPACE || e.getKeyCode() == KeyEvent.VK_ENTER)
-                        setSelected(!isSelected());
+                @Override public void keyPressed(KeyEvent e) {
+                    if (e.getKeyCode() == KeyEvent.VK_SPACE || e.getKeyCode() == KeyEvent.VK_ENTER) setSelected(!isSelected());
                 }
             });
         }
@@ -750,22 +693,30 @@ public class LauncherUI {
             float target = isSelected() ? 1f : 0f;
             float speed = 0.2f;
             anim = anim + (target - anim) * speed;
-            if (Math.abs(target - anim) < 0.02f) {
-                anim = target;
-                timer.stop();
-            }
+            if (Math.abs(target - anim) < 0.02f) { anim = target; timer.stop(); }
             repaint();
         }
 
-        @Override
-        protected void paintComponent(Graphics gOld) {
+        @Override protected void paintComponent(Graphics gOld) {
             Graphics2D g = (Graphics2D) gOld.create();
             g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-            int w = getWidth();
-            int h = getHeight();
-            int arc = h;
+            int w = getWidth(); int h = getHeight(); int arc = h;
             Color on = new Color(76, 217, 100);   // iOS green
-            Color off = new Color(255, 59, 48);   //
+            Color off = new Color(255, 59, 48);   // iOS red
+            Color track = blend(off, on, anim);
+            g.setColor(track); g.fillRoundRect(0, 0, w, h, arc, arc);
+            int margin = 3; int thumb = h - margin * 2; int x = (int) (margin + anim * (w - margin * 2 - thumb));
+            g.setColor(Color.WHITE); g.fillOval(x, margin, thumb, thumb);
+            g.setColor(new Color(0, 0, 0, 40)); g.drawRoundRect(0, 0, w - 1, h - 1, arc, arc);
+            g.dispose();
+        }
+
+        private static Color blend(Color a, Color b, float t) {
+            t = Math.max(0f, Math.min(1f, t));
+            int r = (int) (a.getRed() + (b.getRed() - a.getRed()) * t);
+            int g = (int) (a.getGreen() + (b.getGreen() - a.getGreen()) * t);
+            int bl = (int) (a.getBlue() + (b.getBlue() - a.getBlue()) * t);
+            return new Color(r, g, bl);
         }
     }
 }
